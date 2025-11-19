@@ -1,7 +1,7 @@
 # Revision Schedule and Action Plan
 
 ## Overview
-Goal: revise the manuscript and replication package so that it clearly positions the contribution, rigorously addresses heterogeneity, reports transparent feature engineering, and strengthens validation/robustness in line with the external reviewer’s guidance.
+Goal: revise the manuscript and replication package so that it clearly positions the contribution, rigorously addresses heterogeneity, reports transparent feature engineering, and strengthens validation/robustness in line.
 
 ## Phase 1 – Positioning and Contribution (Week 1)
 1. **Reframe problem statement and contribution.**
@@ -64,7 +64,3 @@ Goal: revise the manuscript and replication package so that it clearly positions
 | 3 | Hierarchical/spatial-temporal effects + validation setup | Diagnostics tables; cross-validation scripts |
 | 4 | Robustness, documentation, memo package | Final tables/figures, tidy package, one-page memo |
 
-## Next Steps
-- Circulate this schedule to co-authors for buy-in.
-- Assign clear ownership for each phase to ensure accountability.
-- Begin Phase 1 immediately to stay on track for the four-week completion window.
