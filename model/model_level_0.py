@@ -14,54 +14,54 @@ if str(ROOT) not in sys.path:
 from module.metrics import evaluate_multitask_predictions, format_results_table
 
 
-# 读取和准备数据
+# Read and prepare data
 def load_data(train_path, test_path):
-    # 读取训练数据和测试数据
+    # Load the training and testing data
     train_data = pd.read_csv(train_path)
     test_data = pd.read_csv(test_path)
 
-    # 提取特征和标签
-    X_train = train_data.iloc[:, :-3].values  # 特征（前12列）
-    y_train = train_data.iloc[:, -3:].values  # 标签（后三列）
-    X_test = test_data.iloc[:, :-3].values    # 特征（前12列）
-    y_test = test_data.iloc[:, -3:].values    # 标签（后三列）
+    # Extract features (first 12 columns) and labels (last three columns)
+    X_train = train_data.iloc[:, :-3].values
+    y_train = train_data.iloc[:, -3:].values
+    X_test = test_data.iloc[:, :-3].values
+    y_test = test_data.iloc[:, -3:].values
 
     return X_train, y_train, X_test, y_test
 
-# 构建并训练有序Logit模型
+# Build and train the ordered logit models
 def train_ppo_model(X, y, output_dir, significance_threshold=0.10):
     """
-    使用方法训练有序Logit模型，并保存系数表
+    Train partial proportional-odds ordered logit models and persist the coefficient tables.
     """
 
     models = []
     coef_matrix = []
-    task_names = ['TTC', 'DRAC', 'PSD']  # 显示任务对应的标签名
-    for task in range(y.shape[1]):  # 针对每个任务（TTC, DRAC, PSD）训练模型
+    task_names = ['TTC', 'DRAC', 'PSD']  # Label names for each task
+    for task in range(y.shape[1]):  # Train a model for every task (TTC, DRAC, PSD)
         print(f"Training model for task {task_names[task]}...")
 
-        # 为PPO方法准备数据
+        # Prepare task-specific labels
         y_task = y[:, task]
 
-        # 训练OrderedModel模型
+        # Train the OrderedModel instance
         model = OrderedModel(y_task, X, distr='probit')
         result = model.fit(method='bfgs')
         models.append(result)
 
-        # 获取系数表，并添加到系数列表中
+        # Capture the coefficient table and collect it
         coef_df = pd.DataFrame({
-            'feature': model.exog_names,  # 特征名称
-            'coef': result.params,        # 对应系数值
-            'p_value': result.pvalues     # 对应p值
+            'feature': model.exog_names,  # Feature names
+            'coef': result.params,        # Coefficients
+            'p_value': result.pvalues     # p-values
         })
 
-        # 将系数值为NaN的行设置为P值不显著的系数
+        # Null coefficients whose p-values do not pass the threshold
         coef_df['coef'] = np.where(coef_df['p_value'] > significance_threshold, np.nan, coef_df['coef'])
         coef_matrix.append(coef_df['coef'].values)
 
         print(result.summary())
 
-    # 将所有任务的系数表保存为一个 CSV 文件
+    # Persist the coefficients for all tasks in a CSV file
     coef_matrix = np.array(coef_matrix).T
     feature_names = coef_df['feature'].values
     coef_matrix_df = pd.DataFrame(coef_matrix, columns=task_names, index=feature_names)
@@ -73,10 +73,10 @@ def train_ppo_model(X, y, output_dir, significance_threshold=0.10):
 
     return models
 
-# 评估模型
+# Evaluate the models
 def evaluate_model(models, X_test, y_test):
     """
-    评估每个任务的PPO模型性能
+    Evaluate the PPO model performance for each task.
     """
     task_names = ['TTC', 'DRAC', 'PSD']
     all_probas = []
@@ -94,9 +94,9 @@ def evaluate_model(models, X_test, y_test):
 
     return metrics
 
-# 主函数
+# Main entry point
 def main():
-    # 设置输入路径、输出路径等参数
+    # Configure input/output paths and other parameters
     ratio_name = "highD_ratio_20"
     ap = argparse.ArgumentParser()
     ap.add_argument("--train", default="../data/" + ratio_name + "/train.csv")
@@ -104,24 +104,24 @@ def main():
     ap.add_argument("--out_dir", default="../output/" + ratio_name + "/results_level_0")
     args = ap.parse_args()
 
-    # 确保输出目录存在
+    # Ensure the output directory exists
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # 载入数据
+    # Load the data
     X_train, y_train, X_test, y_test = load_data(args.train, args.test)
 
-    # 训练PPO模型，并保存系数表
+    # Train the PPO models and save the coefficient tables
     models = train_ppo_model(X_train, y_train, args.out_dir)
 
-    # 评估模型性能
+    # Evaluate the models
     metrics = evaluate_model(models, X_test, y_test)
 
-    # 保存评估结果
+    # Save the evaluation results
     results_file = os.path.join(args.out_dir, "evaluation_results.txt")
     with open(results_file, 'w') as f:
-        # 输出表头
+        # Write the table header
         f.write("Task | Accuracy | F1 | QWK | OrdMAE | NLL | Brier | AUROC | BrdECE\n")
-        # 输出每个任务的评价指标
+        # Output the metrics for each task
         for metric in metrics:
             f.write(
                 f"{metric.task} | {metric.accuracy:.4f} | {metric.f1_score:.4f} | "

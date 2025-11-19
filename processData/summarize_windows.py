@@ -207,11 +207,11 @@ def summarize_windows_df(
     )
 
     if print_to_console:
-        print("\n=== 特征与标签：均值 / Std / 最小 / 最大（仅按有限值或有效标签计算） ===")
+        print("\n=== Features & labels: mean / std / min / max (finite values or valid labels only) ===")
         print(stats_df.to_string(index=False))
-        print("\n=== 特征的 mask 统计（优先 *_mask；无则按有限值推断） ===")
+        print("\n=== Feature mask statistics (prefer *_mask; fall back to finite-value inference) ===")
         print(masks_df.to_string(index=False))
-        print("\n=== 三个分类标签：有效/无效计数 + 各类别个数（仅在有效样本内统计；无 -1 类） ===")
+        print("\n=== Three classification labels: valid/invalid counts + per-class counts (valid samples only; no -1 class) ===")
         print(labels_df.to_string(index=False))
         print("\n================ END OF SUMMARY ================\n")
 

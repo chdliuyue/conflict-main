@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-1) 读取 CSV（前12列=特征，最后3列=标签0/1/2/3）
-2) 按三标签联合分布做分层划分（test_size=0.2），失败回退到单标签分层
-3) 仅在训练集上拟合 StandardScaler，对训练/测试做 transform
-4) 保存 train.csv / test.csv（标准化后的12特征 + 原始3标签）
-5) 打印每个标签的类别“计数 + 占比”（整体/训练/测试）
+1) Load the CSV (first 12 columns = features, last 3 columns = ordinal labels 0/1/2/3)
+2) Perform stratified splits on the joint 3-label distribution (fallback to single-label split)
+3) Fit a StandardScaler on the training set only and transform both train/test
+4) Save train.csv / test.csv (standardized features + original labels)
+5) Print per-label class counts and ratios for all/train/test splits
 """
 import argparse
 import numpy as np
@@ -24,74 +24,74 @@ def show_count_ratio(tag: str, y: np.ndarray):
     ratio = cnt / len(y) if len(y) > 0 else np.zeros_like(cnt, dtype=float)
     cnt_dict   = {int(v): int(c)   for v, c in zip(vals, cnt)}
     ratio_dict = {int(v): float(r) for v, r in zip(vals, ratio)}
-    print(f"[{tag}] 类别计数: {cnt_dict}")
-    print(f"[{tag}] 类别占比: {ratio_dict}")
+    print(f"[{tag}] class counts: {cnt_dict}")
+    print(f"[{tag}] class ratios: {ratio_dict}")
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", default="../data/highD/all_windows_10s_clean.csv",
-                    help="输入CSV路径（前12列=特征，后三列=标签）")
-    ap.add_argument("--train_out", default="../data/highD_ratio_20/train.csv", help="训练集输出CSV")
-    ap.add_argument("--test_out", default="../data/highD_ratio_20/test.csv", help="测试集输出CSV")
-    ap.add_argument("--train_out_old", default="../data/highD_ratio_20/train_old.csv", help="训练集输出CSV")
-    ap.add_argument("--test_out_old", default="../data/highD_ratio_20/test_old.csv", help="测试集输出CSV")
-    ap.add_argument("--test_size", type=float, default=0.20, help="测试集比例")
-    ap.add_argument("--seed", type=int, default=42, help="随机种子")
+                    help="Input CSV path (first 12 columns features, last 3 labels)")
+    ap.add_argument("--train_out", default="../data/highD_ratio_20/train.csv", help="Train-set output CSV")
+    ap.add_argument("--test_out", default="../data/highD_ratio_20/test.csv", help="Test-set output CSV")
+    ap.add_argument("--train_out_old", default="../data/highD_ratio_20/train_old.csv", help="Train-set (unscaled) CSV")
+    ap.add_argument("--test_out_old", default="../data/highD_ratio_20/test_old.csv", help="Test-set (unscaled) CSV")
+    ap.add_argument("--test_size", type=float, default=0.20, help="Test split ratio")
+    ap.add_argument("--seed", type=int, default=42, help="Random seed")
     args = ap.parse_args()
 
-    # 1) 读取与列定位
+    # 1) Load and identify columns
     df = pd.read_csv(args.input)
     if df.shape[1] < 15:
-        raise ValueError(f"列数不足：检测到 {df.shape[1]} 列，但需要至少 15 列（12特征+3标签）")
+        raise ValueError(f"Insufficient columns: detected {df.shape[1]} but need at least 15 (12 features + 3 labels)")
 
     feat_cols  = list(df.columns[:12])
     label_cols = list(df.columns[-3:])
-    print(f"[INFO] 特征列(12): {feat_cols}")
-    print(f"[INFO] 标签列(3): {label_cols}")
+    print(f"[INFO] Feature columns (12): {feat_cols}")
+    print(f"[INFO] Label columns (3): {label_cols}")
 
-    # 2) 清洗：仅保留必要列，去 NaN/Inf，标签限定 {0,1,2,3}
+    # 2) Clean: keep required columns, drop NaN/Inf, clamp labels to {0,1,2,3}
     df = df[feat_cols + label_cols].copy()
     df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=feat_cols + label_cols).reset_index(drop=True)
     for lc in label_cols:
         df[lc] = df[lc].astype(int)
         df = df[df[lc].isin([0, 1, 2, 3])]
     df = df.reset_index(drop=True)
-    print(f"[INFO] 清洗后样本数: {len(df)}")
+    print(f"[INFO] Samples after cleaning: {len(df)}")
 
-    # —— 整体数据的标签计数/占比 —— #
+    # —— Label counts/ratios for the full dataset —— #
     for lc in label_cols:
         show_count_ratio(f"All-{lc}", df[lc].to_numpy())
 
     X = df[feat_cols].to_numpy(dtype=float)
     Y = df[label_cols].to_numpy(dtype=int)
 
-    # 3) 分层划分（优先联合分层）
+    # 3) Stratified split (prefer the joint 3-label distribution)
     y_joint = make_joint_code(Y)
     try:
         sss = StratifiedShuffleSplit(n_splits=1, test_size=args.test_size, random_state=args.seed)
         tr_idx, te_idx = next(sss.split(X, y_joint))
-        how = "joint(3-label) stratified split"
+        how = "joint (3-label) stratified split"
     except ValueError as e:
-        print(f"[WARN] 联合分层失败：{e} → 回退到单标签分层（{label_cols[0]}）")
+        print(f"[WARN] Joint stratification failed: {e} → fall back to single-label stratification ({label_cols[0]})")
         sss = StratifiedShuffleSplit(n_splits=1, test_size=args.test_size, random_state=args.seed)
         tr_idx, te_idx = next(sss.split(X, Y[:, 0]))
         how = f"fallback: single-label stratified ({label_cols[0]})"
-    print(f"[INFO] 分层方式: {how} | 测试集比例: {args.test_size}")
+    print(f"[INFO] Stratification: {how} | test_size={args.test_size}")
 
     X_train, X_test = X[tr_idx], X[te_idx]
     Y_train, Y_test = Y[tr_idx], Y[te_idx]
 
-    # —— 训练/测试标签计数/占比 —— #
+    # —— Label counts/ratios for train/test —— #
     for j, lc in enumerate(label_cols):
         show_count_ratio(f"Train-{lc}", Y_train[:, j])
         show_count_ratio(f" Test-{lc}", Y_test[:, j])
 
-    # 4) 标准化：仅训练集 fit，再同时 transform 训练/测试
+    # 4) Standardize: fit on training set only, transform both splits
     scaler = StandardScaler()
     X_train_std = scaler.fit_transform(X_train)
     X_test_std  = scaler.transform(X_test)
 
-    # 5) 组装并写出 CSV
+    # 5) Assemble and write the CSVs
     train_df = pd.DataFrame(X_train_std, columns=feat_cols)
     test_df  = pd.DataFrame(X_test_std,  columns=feat_cols)
     for j, lc in enumerate(label_cols):
@@ -100,9 +100,9 @@ def main():
 
     train_df.to_csv(args.train_out, index=False)
     test_df.to_csv(args.test_out, index=False)
-    print(f"[DONE] 训练集写入: {args.train_out} | 测试集写入: {args.test_out}")
+    print(f"[DONE] Train CSV: {args.train_out} | Test CSV: {args.test_out}")
 
-    # 6) 保存未标准化的数据
+    # 6) Save unstandardized versions
     train_df_old = pd.DataFrame(X_train, columns=feat_cols)
     test_df_old = pd.DataFrame(X_test, columns=feat_cols)
     for j, lc in enumerate(label_cols):

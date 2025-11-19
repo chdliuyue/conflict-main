@@ -1,11 +1,11 @@
 # proc_utils.py
 # -*- coding: utf-8 -*-
 """
-辅助数据处理函数（与 TTC / DRAC / PSD 处理配套使用）。
-从 process_highD 中抽离的通用工具，尽量保持同名/同参，便于最小改动替换。
+Auxiliary data-processing helpers used alongside the TTC / DRAC / PSD routines.
+These utilities were factored out of process_highD and keep the same names/signatures
+to minimize the required changes.
 
-单位约定：
-- 距离 m、速度 m/s、加速度 m/s²；时间 s。
+Units: distance in metres, speed in m/s, acceleration in m/s², time in seconds.
 """
 
 from __future__ import annotations
@@ -29,15 +29,15 @@ __all__ = [
     "concat_outputs",
 ]
 
-# ------------------------- 常量 ------------------------- #
-CROSS_HYSTERESIS_M: float = 0.2   # 断面穿越的滞回（米）
+# ------------------------- Constants ------------------------- #
+CROSS_HYSTERESIS_M: float = 0.2   # Hysteresis distance (m) when checking section crossings
 EPS: float = 1e-12
 
 
-# ------------------------- 基础/通用 ------------------------- #
+# ------------------------- Core / generic helpers ------------------------- #
 def percentile(s: pd.Series, q_percent: float) -> float:
     """
-    仅在有限值上计算分位（q 为百分位 0–100）。
+    Compute the percentile using only finite values (q is the 0–100 percentile).
     """
     s = pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
     return float(np.percentile(s, q_percent)) if len(s) else np.nan
@@ -45,7 +45,8 @@ def percentile(s: pd.Series, q_percent: float) -> float:
 
 def resolve_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     """
-    在 df.columns 中按候选名（不区分大小写）寻找首个存在的列名，返回其原始大小写。
+    Return the first matching column from df.columns using case-insensitive lookup,
+    preserving the original casing.
     """
     m = {c.lower(): c for c in df.columns}
     for name in candidates:
@@ -57,10 +58,10 @@ def resolve_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
 
 def normalize_vehicle_dims(df: pd.DataFrame) -> pd.DataFrame:
     """
-    将不同数据源中的长度/宽度字段规范为：
-      - veh_len: 车长（m）
-      - veh_wid: 车宽（m）
-    优先使用 length/height，缺失时回退 width。
+    Normalize length/width fields from heterogeneous sources to:
+      - veh_len: vehicle length (m)
+      - veh_wid: vehicle width (m)
+    Prefer length/height and fall back to width when missing.
     """
     out = df
     if "length" in out.columns:
@@ -82,7 +83,7 @@ def normalize_vehicle_dims(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_time_and_dt(df: pd.DataFrame, fps: float) -> pd.DataFrame:
     """
-    由 frame 与 fps 生成绝对时间 time 与时间步长 dt（秒）。
+    Derive absolute time and per-frame dt (seconds) from frame and fps.
     """
     df["time"] = (df["frame"] - 1) / float(fps)
     df["dt"] = 1.0 / float(fps)
@@ -91,7 +92,7 @@ def add_time_and_dt(df: pd.DataFrame, fps: float) -> pd.DataFrame:
 
 def smooth_series(x: pd.Series, win_frames: int = 10) -> pd.Series:
     """
-    居中滑动均值平滑，窗口强制为奇数；不足窗口长度时返回原序列。
+    Apply a centered moving average with an odd window; return the original series if too short.
     """
     w = max(3, int(win_frames) | 1)
     if len(x) < w:
@@ -99,11 +100,11 @@ def smooth_series(x: pd.Series, win_frames: int = 10) -> pd.Series:
     return x.rolling(window=w, center=True, min_periods=max(1, w // 2)).mean()
 
 
-# ------------------------- 方向/车道工具 ------------------------- #
+# ------------------------- Direction / lane utilities ------------------------- #
 def lane_direction_map(tracks: pd.DataFrame, tracks_meta: pd.DataFrame) -> Dict[int, int]:
     """
-    估计每条 laneId 的主行驶方向（用 tracksMeta 的 drivingDirection 做众数）。
-    返回 {laneId -> drivingDirection}。
+    Estimate the dominant driving direction per laneId (mode of tracksMeta.drivingDirection).
+    Returns {laneId -> drivingDirection}.
     """
     id2dir = dict(zip(tracks_meta["id"].values, tracks_meta["drivingDirection"].values))
     tmp = tracks[["laneId", "id"]].copy()
@@ -114,18 +115,18 @@ def lane_direction_map(tracks: pd.DataFrame, tracks_meta: pd.DataFrame) -> Dict[
 
 def infer_lane_inc(df_lane_raw: pd.DataFrame) -> bool:
     """
-    依据该车道内车辆的 x 变化中位数推断“下游是否为 x 增大方向”。
-    返回 True 表示 x 递增为下游（inc），False 表示相反。
+    Infer whether the downstream direction corresponds to increasing x.
+    Returns True if x increases downstream (inc), False otherwise.
     """
     df_l_sorted = df_lane_raw.sort_values(["id", "frame"])
     try:
         delta_by_id = df_l_sorted.groupby("id")["x"].apply(lambda s: s.iloc[-1] - s.iloc[0]).dropna()
         return bool(float(np.nanmedian(delta_by_id.values)) > 0)
     except Exception:
-        return True  # 回退：默认 x 递增为下游
+        return True  # Fallback: assume x increases downstream
 
 
-# ------------------------- 穿越事件/锚点 ------------------------- #
+# ------------------------- Crossing events / anchors ------------------------- #
 def crossing_events_full(
     df_lane: pd.DataFrame,
     X_line: float,
@@ -133,13 +134,13 @@ def crossing_events_full(
     eps_m: float = CROSS_HYSTERESIS_M,
 ) -> pd.DataFrame:
     """
-    断面穿越事件（带滞回保护），用于 UF/DF 与边界速度统计。
-    参数：
-      - df_lane: 单车道帧级数据，需含列 ["time","id","x_prev","x","xVelocity","v_abs","veh_len"]
-      - X_line: 断面 x 坐标
-      - inc: True 表示下游在 x 增大方向
-      - eps_m: 滞回距离（米），减少噪声反复穿越
-    返回：包含穿越时刻的行（按 time 排序）
+    Identify section-crossing events with hysteresis for UF/DF and boundary-speed stats.
+    Args:
+      - df_lane: single-lane frame-level data with columns ["time","id","x_prev","x","xVelocity","v_abs","veh_len"]
+      - X_line: x-position of the section
+      - inc: True if downstream is positive x
+      - eps_m: hysteresis distance (m) to suppress noisy crossings
+    Returns rows containing crossing instants ordered by time.
     """
     prev = df_lane["x_prev"] - X_line
     now = df_lane["x"] - X_line
@@ -155,8 +156,8 @@ def crossing_events_full(
 
 def precompute_location_anchors(rec_dirs: List[Path]) -> Dict[int, Tuple[float, float]]:
     """
-    预扫所有录像的 x 取值，用 1% 与 99% 分位的中位数作为每个 location 的“上/下游锚点”。
-    返回 {locationId -> (x_lo_loc, x_hi_loc)}。
+    Scan every recording to capture the 1%/99% quantiles of x, and use their medians
+    as upstream/downstream anchors per location. Returns {locationId -> (x_lo_loc, x_hi_loc)}.
     """
     anchors_raw: Dict[int, List[Tuple[float, float]]] = {}
     for d in rec_dirs:
@@ -193,11 +194,11 @@ def precompute_location_anchors(rec_dirs: List[Path]) -> Dict[int, Tuple[float, 
     return anchors
 
 
-# ------------------------- 时间/文件工具 ------------------------- #
+# ------------------------- Time / file utilities ------------------------- #
 def parse_start_time_seconds(rec_meta: pd.DataFrame) -> Optional[float]:
     """
-    从 recordingMeta 中解析绝对起始时间（秒）。支持时间戳/毫秒/ISO 字符串。
-    解析失败返回 None。
+    Parse the absolute start time (seconds) from recordingMeta.
+    Supports timestamps in seconds/milliseconds or ISO strings. Returns None on failure.
     """
     cand = [c for c in rec_meta.columns if ("start" in c.lower() and ("time" in c.lower() or "stamp" in c.lower()))]
     for c in cand:
@@ -219,7 +220,7 @@ def parse_start_time_seconds(rec_meta: pd.DataFrame) -> Optional[float]:
 
 def natural_sorted_dirs(root: Path) -> List[Path]:
     """
-    返回形如 00..99 的子目录（优先），否则根据 *_recordingMeta.csv 推断。
+    Return two-digit subdirectories (00..99) if present, otherwise infer from *_recordingMeta.csv files.
     """
     if root.exists():
         subdirs = [p for p in root.iterdir() if p.is_dir() and p.name.isdigit() and len(p.name) == 2]
@@ -234,7 +235,7 @@ def natural_sorted_dirs(root: Path) -> List[Path]:
 
 def concat_outputs(out_dir: Path, window_sec: float) -> Path:
     """
-    合并各录像输出为一个总 CSV：all_windows_{window}s.csv
+    Merge every per-recording output into a single CSV: all_windows_{window}s.csv
     """
     parts = sorted(out_dir.glob(f"[0-9][0-9]_windows_{int(window_sec)}s.csv"),
                    key=lambda p: int(p.name[:2]))

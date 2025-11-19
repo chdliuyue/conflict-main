@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 from sklearn.model_selection import GridSearchCV
 
-# 确保可以从父目录导入模块
+# Ensure modules can be imported from the parent directory
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
@@ -15,20 +15,20 @@ if str(ROOT) not in sys.path:
 from module.metrics import evaluate_multitask_predictions, format_results_table
 
 
-# 读取和准备数据
+# Read and prepare data
 def load_data(train_path, test_path):
     """
-    读取训练和测试数据，并返回NumPy数组以及特征名称。
+    Read the training/testing data and return NumPy arrays plus feature names.
     """
-    # 读取训练数据和测试数据
+    # Load training and testing data
     train_data = pd.read_csv(train_path)
     test_data = pd.read_csv(test_path)
 
-    # 在转换为NumPy数组之前，先获取特征名称
-    # feature_names = train_data.columns[:-3].tolist() # 在这里选特征
+    # Retrieve feature names before converting to NumPy arrays
+    # feature_names = train_data.columns[:-3].tolist() # Select features here
     feature_names = ['UF', 'UAS', 'UD', 'UAL', 'DF', 'DAS', 'DD', 'DAL', 'rq_rel', 'rk_rel', 'CV_v', 'E_BRK']
 
-    # 提取特征和标签，并转换为NumPy数组
+    # Extract features and labels and convert to NumPy arrays
     # X_train = train_data.iloc[:, :-3].values
     # X_test = test_data.iloc[:, :-3].values
     X_train = train_data[feature_names].values
@@ -40,45 +40,44 @@ def load_data(train_path, test_path):
     return X_train, y_train, X_test, y_test, feature_names
 
 
-# 构建并训练XGBoost模型
+# Build and train the XGBoost models
 def train_xgboost_model(X, y, output_dir, feature_names):
     """
-    为每个任务使用网格搜索训练一个XGBoost分类器，并保存特征重要性表。
+    Train a task-specific XGBoost classifier via grid search and export feature importances.
     """
     models = []
     feature_importances_matrix = []
-    task_names = ['TTC', 'DRAC', 'PSD']  # 显示任务对应的标签名
+    task_names = ['TTC', 'DRAC', 'PSD']  # Label names for each task
 
-    # 定义要搜索的超参数网格
-    # 这是一个示例网格，您可以根据需要调整范围
+    # Define the hyper-parameter grid
+    # This grid is only an example; adjust the ranges as needed
     # param_grid = {
     #     'max_depth': [3, 4, 5],
     #     'learning_rate': [0.05, 0.075, 0.1],
     #     'n_estimators': [100, 150, 200],
-    #     'reg_lambda': [0.5, 1.0, 1.5, 2.0]  # L2 正则化
+    #     'reg_lambda': [0.5, 1.0, 1.5, 2.0]  # L2 regularization
     # }
     param_grid = {
         'max_depth': [3],
         'learning_rate': [0.1],
         'n_estimators': [100],
-        'reg_lambda': [1.0]  # L2 正则化
+        'reg_lambda': [1.0]  # L2 regularization
     }
 
     for task_idx, task_name in enumerate(task_names):
         print(f"--- Starting GridSearchCV for task: {task_name} ---")
 
-        # 准备每个任务的数据
+        # Prepare the training labels for the current task
         y_task = y[:, task_idx]
 
-        # 初始化基础模型 (移除了 use_label_encoder)
+        # Initialize the base model (use_label_encoder removed)
         model = xgb.XGBClassifier(
             objective='multi:softprob',
             eval_metric='mlogloss',
             random_state=42
         )
 
-        # 设置GridSearchCV
-        # cv=3 表示3折交叉验证，n_jobs=-1 使用所有CPU核心
+        # Configure GridSearchCV (cv=3 means 3-fold CV, n_jobs=-1 uses all CPU cores)
         grid_search = GridSearchCV(
             estimator=model,
             param_grid=param_grid,
@@ -88,20 +87,20 @@ def train_xgboost_model(X, y, output_dir, feature_names):
             n_jobs=-1
         )
 
-        # 运行网格搜索
+        # Execute the grid search
         grid_search.fit(X, y_task)
 
         print(f"Best parameters found for task {task_name}: {grid_search.best_params_}")
 
-        # 获取最佳模型
+        # Capture the best-performing model
         best_model = grid_search.best_estimator_
         models.append(best_model)
 
-        # 获取并存储特征重要性
+        # Collect and store the feature importances
         importances = best_model.feature_importances_
         feature_importances_matrix.append(importances)
 
-    # 将所有任务的特征重要性保存为一个 CSV 文件
+    # Persist the feature importances for all tasks as a single CSV file
     feature_importances_matrix = np.array(feature_importances_matrix).T
 
     feature_importances_df = pd.DataFrame(
@@ -110,7 +109,7 @@ def train_xgboost_model(X, y, output_dir, feature_names):
         index=feature_names
     )
 
-    # 保存特征重要性文件
+    # Save the feature-importance file
     output_path = os.path.join(output_dir, 'xgb_importances.csv')
     feature_importances_df.to_csv(output_path, index_label='feature')
     print(f"Level 0 feature importances saved to {output_path}")
@@ -118,10 +117,10 @@ def train_xgboost_model(X, y, output_dir, feature_names):
     return models
 
 
-# 评估模型
+# Evaluate the models
 def evaluate_model(models, X_test, y_test):
     """
-    评估每个任务的XGBoost模型性能。
+    Evaluate the XGBoost performance for each task.
     """
     task_names = ['TTC', 'DRAC', 'PSD']
     all_probas = []
@@ -130,7 +129,7 @@ def evaluate_model(models, X_test, y_test):
         task_name = task_names[i]
         print(f"Evaluating model for task {task_name}...")
 
-        # 使用 predict_proba 获取预测概率
+        # Use predict_proba to obtain the class probabilities
         probas = model.predict_proba(X_test)
 
         if probas.ndim != 2:
@@ -138,10 +137,10 @@ def evaluate_model(models, X_test, y_test):
 
         all_probas.append(probas)
 
-    # 将所有任务的概率堆叠成一个 [N, M, C] 的数组
+    # Stack every task's probabilities into an [N, M, C] tensor
     all_probas = np.stack(all_probas, axis=1)
 
-    # 使用导入的评估函数计算指标
+    # Compute metrics with the shared evaluation helper
     metrics = evaluate_multitask_predictions(y_true=y_test, probas=all_probas, task_names=task_names)
 
     print(format_results_table(metrics))
@@ -149,9 +148,9 @@ def evaluate_model(models, X_test, y_test):
     return metrics
 
 
-# 主函数
+# Main entry point
 def main():
-    # 设置输入路径、输出路径等参数
+    # Configure paths and runtime parameters
     ratio_name = "highD_ratio_20"
     ap = argparse.ArgumentParser()
     ap.add_argument("--train", default=f"../data/{ratio_name}/train_old.csv")
@@ -159,24 +158,24 @@ def main():
     ap.add_argument("--out_dir", default=f"../output/{ratio_name}/results_xgb_gs")
     args = ap.parse_args()
 
-    # 确保输出目录存在
+    # Ensure the output directory exists
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # 载入数据，并获取特征名称
+    # Load the data and recover the feature names
     X_train, y_train, X_test, y_test, feature_names = load_data(args.train, args.test)
 
-    # 训练XGBoost模型，并保存特征重要性
+    # Train the XGBoost models and save the feature importances
     models = train_xgboost_model(X_train, y_train, args.out_dir, feature_names)
 
-    # 评估模型性能
+    # Evaluate the model performance
     metrics = evaluate_model(models, X_test, y_test)
 
-    # 保存评估结果
+    # Persist the evaluation results
     results_file = os.path.join(args.out_dir, "evaluation_results.txt")
     with open(results_file, 'w') as f:
-        # 输出表头
+        # Write the table header
         f.write("Task | Accuracy | F1 | QWK | OrdMAE | NLL | Brier | AUROC | BrdECE\n")
-        # 输出每个任务的评价指标
+        # Output the metrics for every task
         for metric in metrics:
             f.write(
                 f"{metric.task} | {metric.accuracy:.4f} | {metric.f1_score:.4f} | "
