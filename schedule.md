@@ -19,7 +19,7 @@ Goal: revise the manuscript and replication package so that it clearly positions
    - Explore correlations among random parameters and grouped random parameters where theory motivates shared variation.
    - Add latent-class and scale heterogeneity models for comparison.
 3. **Hierarchical / spatial-temporal effects.**
-   - Introduce hierarchical random effects (e.g., region → firm → transaction) or spatial-temporal lags when data allow.
+   - Introduce hierarchical random effects or spatial-temporal lags when data allow.
    - Test alternative specifications that include spatial kernels or temporal smoothing to capture unobserved clustering.
 4. **Diagnostics and inference.**
    - For each model, compute likelihood ratio tests and Wald tests to compare nested specifications.
