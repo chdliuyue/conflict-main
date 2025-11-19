@@ -103,9 +103,9 @@ def clean_conflict_dataframe(
     missing_labs = tuple(col for col in labels if col not in available_labs)
 
     if strict and (missing_feats or missing_labs):
-        raise ValueError(f"[STRICT] 缺少列：features={missing_feats}, labels={missing_labs}")
+        raise ValueError(f"[STRICT] Missing columns: features={missing_feats}, labels={missing_labs}")
     if not available_feats or not available_labs:
-        raise ValueError("[ERROR] 可用的特征或标签列为空，请检查输入文件。")
+        raise ValueError("[ERROR] No usable feature or label columns were found; check the input file.")
 
     # Convert once to numeric for validity checks.
     converted = {
@@ -161,7 +161,7 @@ def clean_conflict_csv(
     """Read *src*, clean it and write the resulting dataframe to *dst*."""
 
     df = pd.read_csv(src, sep=sep, encoding=encoding, low_memory=False)
-    print(f"[INFO] 读取完成：{src}  形状={df.shape}")
+    print(f"[INFO] Loaded {src} with shape={df.shape}")
 
     result = clean_conflict_dataframe(
         df,
@@ -171,25 +171,25 @@ def clean_conflict_csv(
     )
 
     if result.missing_features:
-        print(f"[WARN] 缺少特征列（将跳过）：{result.missing_features}")
+        print(f"[WARN] Missing feature columns (skipped): {result.missing_features}")
     if result.missing_labels:
-        print(f"[WARN] 缺少标签列（将跳过）：{result.missing_labels}")
+        print(f"[WARN] Missing label columns (skipped): {result.missing_labels}")
 
     print(
-        f"[INFO] 清洗完成：删除行数={result.dropped_rows}，保留行数="
-        f"{len(result.data)}；保留列={len(result.data.columns)}"
+        f"[INFO] Cleaning complete: dropped={result.dropped_rows}, kept rows="
+        f"{len(result.data)}, retained columns={len(result.data.columns)}"
     )
 
     for label, count in result.invalid_label_counts.items():
         print(
-            f"[WARN] 标签 {label} 存在 {count} 个越界取值（非 0/1/2/3），"
-            "已保留到输出，请后续处理。"
+            f"[WARN] Label {label} contains {count} out-of-range values (not 0/1/2/3); "
+            "they remain in the output for downstream handling."
         )
 
     dst_path = Path(dst)
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     result.data.to_csv(dst_path, index=False, sep=sep, encoding=encoding)
-    print(f"[OK] 已保存至：{dst_path}  形状={result.data.shape}")
+    print(f"[OK] Saved cleaned CSV to {dst_path} with shape={result.data.shape}")
 
     if summarize:
         from summarize_windows import summarize_windows_df
@@ -205,11 +205,11 @@ def clean_conflict_csv(
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", default="../data/highD/all_windows_10s.csv", help="输入 CSV 路径")
-    ap.add_argument("--output", default="../data/highD/all_windows_clean.csv", help="输出 CSV 路径")
-    ap.add_argument("--strict", action="store_true", help="缺列时报错（默认宽松跳过）")
-    ap.add_argument("--sep", default=",", help="CSV 分隔符（默认 ,）")
-    ap.add_argument("--encoding", default="utf-8", help="文件编码（默认 utf-8）")
+    ap.add_argument("--input", default="../data/highD/all_windows_10s.csv", help="Input CSV path")
+    ap.add_argument("--output", default="../data/highD/all_windows_clean.csv", help="Output CSV path")
+    ap.add_argument("--strict", action="store_true", help="Raise if required columns are missing (default skips)")
+    ap.add_argument("--sep", default=",", help="CSV delimiter (default ,)")
+    ap.add_argument("--encoding", default="utf-8", help="File encoding (default utf-8)")
     return ap.parse_args()
 
 

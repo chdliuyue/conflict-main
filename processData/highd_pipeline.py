@@ -35,7 +35,7 @@ except Exception:  # pragma: no cover - fallback in environments without tqdm
     tqdm = lambda x, **k: x
 
 
-# ============================= 常量 =============================
+# ============================= Constants =============================
 DEFAULT_WINDOW_SEC = 10.0
 DEFAULT_STRIDE_SEC = 10.0
 DEFAULT_ALPHA = 0.10
@@ -51,7 +51,7 @@ DEFAULT_DIST_MARGIN_M = 1.0
 DEFAULT_LEN_MARGIN_FRAC = 0.10
 """Fraction of the follower length folded into the geometric shrink."""
 
-# 反应时间补偿 值越大高类别越多
+# Reaction-time compensation: higher values make severe classes more likely
 DEFAULT_TAU_TTC = 0.4
 """Reaction time (s) reserved for TTC by shrinking the effective spacing."""
 DEFAULT_TAU_DRAC = 0.5
@@ -143,7 +143,7 @@ class PipelineResult:
     summary_tables: Optional[Dict[str, pd.DataFrame]]
 
 
-# ============================= 单窗聚合（定版口径） =============================
+# ============================= Single-window aggregation (finalized spec) =============================
 def aggregate_window_lane(
     df_lane: pd.DataFrame,
     evU_all: pd.DataFrame,
@@ -169,7 +169,7 @@ def aggregate_window_lane(
     if len(evU) == 0 and len(evD) == 0 and not keep_empty:
         return {}
 
-    # —— Octet+（无 w_hat）——
+    # —— Octet+ (without w_hat) ——
     UF_h = len(evU) * (3600.0 / W)
     DF_h = len(evD) * (3600.0 / W)
 
@@ -197,7 +197,7 @@ def aggregate_window_lane(
     UD_mask = int(np.isfinite(UD))
     DD_mask = int(np.isfinite(DD))
 
-    # —— rq/rk 相对梯度（可选）——
+    # —— rq/rk relative gradients (optional) ——
     dq = DF_h - UF_h
     dk = (DD - UD) if (np.isfinite(DD) and np.isfinite(UD)) else np.nan
     rq_den = 0.5 * (UF_h + DF_h)
@@ -211,7 +211,7 @@ def aggregate_window_lane(
     rq_rel_mask = int(np.isfinite(rq_rel))
     rk_rel_mask = int(np.isfinite(rk_rel))
 
-    # —— Edie 区间密度与 K-QV 一致性 ——
+    # —— Edie space-time density vs. K-QV consistency ——
     x_lo, x_hi = (X_up, X_down) if X_up <= X_down else (X_down, X_up)
     x_lo_e, x_hi_e = x_lo + boundary_m, x_hi - boundary_m
     if x_hi_e - x_lo_e <= 1e-6:
@@ -226,7 +226,7 @@ def aggregate_window_lane(
         )
     K_EDIE_mask = int(np.isfinite(K_EDIE))
 
-    # K_QV：取 UD/DD 的均值（veh/km）
+    # K_QV: mean of UD/DD (veh/km)
     k_vals = []
     if np.isfinite(UD):
         k_vals.append(UD)
@@ -241,7 +241,7 @@ def aggregate_window_lane(
         QKV_relerr_q = np.nan
         QKV_relerr_q_mask = 0
 
-    # —— 速度波动 / 制动暴露 / Jerk ——
+    # —— Speed variation / braking exposure / jerk ——
     vvals = (
         sub.loc[(sub["x"] >= x_lo_e) & (sub["x"] <= x_hi_e), "v_abs"]
         .replace([np.inf, -np.inf], np.nan)
@@ -271,7 +271,7 @@ def aggregate_window_lane(
 
     from ssm_metrics import compute_nodewise_labels, compute_window_base_quantiles
 
-    # ====== SSM：窗口分位（p05/p95） + 节点级打分 ======
+    # ====== SSM: window quantiles (p05/p95) + node-level scoring ======
     base_q = compute_window_base_quantiles(sub, min_valid_frames=MIN_VALID_FRAMES)
     node_labels = compute_nodewise_labels(
         sub,
@@ -285,7 +285,7 @@ def aggregate_window_lane(
         params=ssm_params,
     )
 
-    # PSD 掩码与四分类
+    # PSD mask and four-class labels
     PSD_p95 = base_q.get("PSD_p95", np.nan)
 
     return dict(
